@@ -1,5 +1,3 @@
-# Title: Main Inventory
-
 import streamlit as st
 import pandas as pd
 import os
@@ -339,17 +337,31 @@ with st.expander("📦 Stock Count"):
             elif uploaded_file.name.endswith(".xlsx"):
                 scanned_df = pd.read_excel(uploaded_file)
             elif uploaded_file.name.endswith(".txt"):
-                scanned_df = pd.read_csv(uploaded_file)
+                scanned_df = pd.read_csv(uploaded_file, delimiter=None)
             else:
                 st.error("Unsupported file type.")
                 scanned_df = None
         except Exception as e:
             st.error(f"Error reading file: {e}")
             scanned_df = None
+
+        # Show a preview
         if scanned_df is not None:
+            st.write("Preview of your uploaded file:")
+            st.dataframe(scanned_df.head(), use_container_width=True)
+            
+            # Try to auto-detect the barcode column
+            barcode_candidates = [
+                col for col in scanned_df.columns
+                if "barcode" in col.lower() or "ean" in col.lower() or "upc" in col.lower() or "code" in col.lower()
+            ]
+            if not barcode_candidates:
+                barcode_candidates = scanned_df.columns.tolist()  # fallback to all columns
+
             barcode_column = st.selectbox(
-                "Select the column containing barcodes", scanned_df.columns.tolist()
+                "Select the column containing barcodes", barcode_candidates
             )
+
             inventory_barcodes = set(df[barcode_col].map(clean_barcode))
             scanned_barcodes = set(scanned_df[barcode_column].map(clean_barcode))
             matched = inventory_barcodes & scanned_barcodes
