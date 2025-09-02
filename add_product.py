@@ -3,7 +3,6 @@ import pandas as pd
 import os
 from datetime import datetime
 import random
-import uuid
 import barcode
 from barcode.writer import ImageWriter
 import io
@@ -35,11 +34,22 @@ def generate_unique_barcode(df):
         if clean_barcode(barcode_val) not in df["BARCODE"].map(clean_barcode).values:
             return barcode_val
 
-def generate_unique_framecode(df):
-    while True:
-        framecode_val = "FRM" + uuid.uuid4().hex[-8:].upper()
-        if clean_barcode(framecode_val) not in df["FRAME NO."].map(clean_barcode).values:
-            return framecode_val
+def generate_framecode(supplier, df):
+    prefix = supplier[:3].upper()
+    frame_col = "FRAME NO."
+    if frame_col not in df.columns:
+        return prefix + "000001"
+    # Filter existing framecodes with this prefix
+    framecodes = df[frame_col].dropna().astype(str)
+    matching = framecodes[framecodes.str.startswith(prefix)]
+    # Extract numeric portion
+    nums = matching.str[len(prefix):].str.extract(r'(\d{6})')[0].dropna()
+    if not nums.empty:
+        max_num = int(nums.max())
+        next_num = max_num + 1
+    else:
+        next_num = 1
+    return f"{prefix}{next_num:06d}"
 
 def generate_barcode_image(code):
     try:
@@ -162,9 +172,13 @@ with btn_col1:
         st.session_state["barcode"] = generate_unique_barcode(df)
         st.session_state["add_product_expanded"] = True
 with btn_col2:
+    supplier_val = st.text_input("Enter Supplier for Framecode Generation", key="supplier_for_framecode")
     if st.button("Generate Framecode"):
-        st.session_state["framecode"] = generate_unique_framecode(df)
-        st.session_state["add_product_expanded"] = True
+        if supplier_val:
+            st.session_state["framecode"] = generate_framecode(supplier_val, df)
+            st.session_state["add_product_expanded"] = True
+        else:
+            st.warning("Please enter a supplier name first.")
 
 if st.session_state["barcode"]:
     st.markdown("#### Barcode Image")
