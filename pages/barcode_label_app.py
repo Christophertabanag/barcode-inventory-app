@@ -1,3 +1,5 @@
+# Title: Barcode Label Printer
+
 import streamlit as st
 import pandas as pd
 import os
@@ -5,6 +7,7 @@ import barcode
 from barcode.writer import ImageWriter
 import io
 import base64
+from streamlit_js_eval import streamlit_js_eval
 
 INVENTORY_FILE = os.path.join(os.path.dirname(__file__), "..", "inventory.xlsx")
 
@@ -100,10 +103,10 @@ else:
 </div>
 """, unsafe_allow_html=True)
 
-    # Print button
-    st.markdown("""
-    <button onclick="window.print()" style="font-size:18px;margin:16px 0;">Print Label</button>
-    """, unsafe_allow_html=True)
+    # Print button using streamlit-js-eval
+    if st.button("Print Label"):
+        streamlit_js_eval(js_expressions="window.print()", key="print_dialog")
+        st.info("Print dialog opened. Please select your printer and print the label.")
 
 st.markdown("---")
 st.write("For best results, use landscape mode and set margins to minimum when printing.")
