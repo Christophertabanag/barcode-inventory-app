@@ -1,3 +1,5 @@
+# Title: Main Inventory
+
 import streamlit as st
 import pandas as pd
 import os
@@ -132,6 +134,10 @@ if "edit_product_index" not in st.session_state:
     st.session_state["edit_product_index"] = None
 if "edit_delete_expanded" not in st.session_state:
     st.session_state["edit_delete_expanded"] = False
+if "pending_delete_index" not in st.session_state:
+    st.session_state["pending_delete_index"] = None
+if "pending_delete_confirmed" not in st.session_state:
+    st.session_state["pending_delete_confirmed"] = False
 
 df = load_inventory()
 columns = list(df.columns)
@@ -300,14 +306,26 @@ with st.expander("✏️ Edit or 🗑 Delete Products", expanded=st.session_stat
                         st.session_state["edit_delete_expanded"] = True
                         st.rerun()
                 if submit_delete:
-                    df = df.drop(selected_row).reset_index(drop=True)
-                    df.to_excel(INVENTORY_FILE, index=False)
-                    st.success("Product deleted successfully!")
-                    st.session_state["edit_product_index"] = None
-                    st.session_state["edit_delete_expanded"] = True
-                    st.rerun()
+                    st.session_state["pending_delete_index"] = selected_row
+
     else:
         st.info("No products in inventory yet.")
+
+if st.session_state.get("pending_delete_index") is not None:
+    st.warning(f"Are you sure you want to delete product with barcode '{clean_barcode(df.at[st.session_state['pending_delete_index'], barcode_col])}' and framecode '{clean_barcode(df.at[st.session_state['pending_delete_index'], framecode_col])}'?")
+    confirm_col, cancel_col = st.columns(2)
+    with confirm_col:
+        if st.button("Confirm Delete", key="confirm_delete_btn"):
+            df = df.drop(st.session_state["pending_delete_index"]).reset_index(drop=True)
+            df.to_excel(INVENTORY_FILE, index=False)
+            st.success("Product deleted successfully!")
+            st.session_state["edit_product_index"] = None
+            st.session_state["edit_delete_expanded"] = True
+            st.session_state["pending_delete_index"] = None
+            st.rerun()
+    with cancel_col:
+        if st.button("Cancel", key="cancel_delete_btn"):
+            st.session_state["pending_delete_index"] = None
 
 st.dataframe(df, use_container_width=True)
 
