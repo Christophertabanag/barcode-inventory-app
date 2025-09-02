@@ -61,6 +61,13 @@ def add_to_unfound(search_barcode_clean, unfound_df):
         st.success("Barcode added to unfound barcodes list!")
     return unfound_df
 
+def delete_unfound_barcode(barcode_to_delete, unfound_df):
+    clean_barcodes = unfound_df["BARCODE"].astype(str).apply(clean_barcode)
+    new_unfound_df = unfound_df[clean_barcodes != barcode_to_delete]
+    new_unfound_df.to_excel(UNFOUND_BARCODES, index=False)
+    st.success(f"Deleted barcode: {barcode_to_delete}")
+    return new_unfound_df
+
 st.title("Inventory Check / Product Transfer")
 
 main_df, secondary_df, unfound_df = ensure_inventory_files(MAIN_INVENTORY, SECONDARY_INVENTORY, UNFOUND_BARCODES)
@@ -98,8 +105,23 @@ st.dataframe(secondary_df.drop(columns=["BARCODE_CLEAN"], errors="ignore"), use_
 
 st.markdown("---")
 st.subheader("Unfound Barcodes List")
+
+# Show table first
 st.dataframe(unfound_df, use_container_width=True)
+
+# Show per-row delete buttons below the table
 if not unfound_df.empty:
+    st.write("Delete a barcode from the unfound list:")
+    for idx, row in unfound_df.iterrows():
+        barcode_cleaned = clean_barcode(row["BARCODE"])
+        cols = st.columns([2,1])
+        with cols[0]:
+            st.write(f'{row["BARCODE"]} ({row["Timestamp"]})')
+        with cols[1]:
+            if st.button(f"Delete", key=f"delete_unfound_{idx}"):
+                unfound_df = delete_unfound_barcode(barcode_cleaned, unfound_df)
+                # No rerun; UI updates on next interaction
+
     buffer = io.BytesIO()
     unfound_df.to_excel(buffer, index=False, engine='openpyxl')
     buffer.seek(0)
@@ -109,3 +131,5 @@ if not unfound_df.empty:
         file_name="unfound_barcodes.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+else:
+    st.write("No unfound barcodes.")
