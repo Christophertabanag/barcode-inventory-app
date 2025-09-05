@@ -39,10 +39,8 @@ def generate_framecode(supplier, df):
     frame_col = "FRAME NO."
     if frame_col not in df.columns:
         return prefix + "000001"
-    # Filter existing framecodes with this prefix
     framecodes = df[frame_col].dropna().astype(str)
     matching = framecodes[framecodes.str.startswith(prefix)]
-    # Extract numeric portion
     nums = matching.str[len(prefix):].str.extract(r'(\d{6})')[0].dropna()
     if not nums.empty:
         max_num = int(nums.max())
@@ -74,27 +72,44 @@ def get_smart_default(header, df):
     if header in df.columns and not df[header].dropna().empty:
         most_common = df[header].dropna().mode()
         if not most_common.empty: return str(most_common.iloc[0])
-    if header == "MANUFACT":
+    if header == "MANUFACTURER":
         return "Ray-Ban"
     if header == "SUPPLIER":
         return "Default Supplier"
-    if header == "FRAMETYPE":
-        return "Full Rim"
+    if header == "F TYPE":
+        return "MEN"
     if header == "RRP":
         return "120.00"
-    if header == "EXCOSTPRICE":
+    if header == "EXCOSTPR":
         return "60.00"
-    if header == "COSTPRICE":
+    if header == "COST PRICE":
         return "70.00"
     if header == "TAXPC":
-        return "12"
-    if header == "AVAILFROM":
-        return datetime.now().strftime("%Y-%m-%d")
+        return "GST 10%"
+    if header == "AVAIL FROM":
+        return datetime.now().date()
     if header == "FRSTATUS":
-        return "Active"
+        return "PRACTICE OWNED"
     if header == "NOTE":
         return ""
     return ""
+
+# Only these fields should be shown in Add/Edit Product forms
+VISIBLE_FIELDS = [
+    "BARCODE", "LOCATION", "FRAME NO.", "PKEY", "MANUFACTURER", "MODEL", "SIZE",
+    "F COLOUR", "F GROUP", "SUPPLIER", "QUANTITY", "F TYPE", "TEMPLE", "DEPTH", "DIAG",
+    "BASECURVE", "RRP", "EXCOSTPR", "COST PRICE", "TAXPC", "FRSTATUS", "AVAIL FROM", "NOTE"
+]
+
+FREE_TEXT_FIELDS = [
+    "PKEY", "F COLOUR", "F GROUP", "BASECURVE"
+]
+
+# Dropdown options for some fields
+F_TYPE_OPTIONS = ["MEN", "WOMEN", "KIDS", "UNISEX"]
+FRSTATUS_OPTIONS = ["CONSIGNMENT OWNED", "PRACTICE OWNED"]
+TAXPC_OPTIONS = [f"GST {i}%" for i in range(1, 21)]
+SIZE_OPTIONS = [f"{i:02d}-{j:02d}" for i in range(100) for j in range(100)]
 
 st.markdown("""
     <style>
@@ -146,6 +161,8 @@ if "pending_delete_index" not in st.session_state:
     st.session_state["pending_delete_index"] = None
 if "pending_delete_confirmed" not in st.session_state:
     st.session_state["pending_delete_confirmed"] = False
+if "supplier_for_framecode" not in st.session_state:
+    st.session_state["supplier_for_framecode"] = ""
 
 df = load_inventory()
 columns = list(df.columns)
@@ -161,7 +178,6 @@ headers = [h for h in columns if h.lower() != "timestamp"]
 
 st.title("Inventory Manager")
 
-# Add icon/button to go to Barcode Label Printer (same multipage app)
 if st.button("🏷️ Go to Barcode Label Printer"):
     st.switch_page("pages/barcode_label_app.py")
 
@@ -172,10 +188,15 @@ with btn_col1:
         st.session_state["barcode"] = generate_unique_barcode(df)
         st.session_state["add_product_expanded"] = True
 with btn_col2:
-    supplier_val = st.text_input("Enter Supplier for Framecode Generation", key="supplier_for_framecode")
+    supplier_val = st.text_input(
+        "Enter Supplier for Framecode Generation",
+        value=st.session_state.get("supplier_for_framecode", ""),
+        key="supplier_for_framecode",
+        on_change=None,
+    )
     if st.button("Generate Framecode"):
-        if supplier_val:
-            st.session_state["framecode"] = generate_framecode(supplier_val, df)
+        if st.session_state["supplier_for_framecode"]:
+            st.session_state["framecode"] = generate_framecode(st.session_state["supplier_for_framecode"], df)
             st.session_state["add_product_expanded"] = True
         else:
             st.warning("Please enter a supplier name first.")
@@ -189,7 +210,8 @@ if st.session_state["barcode"]:
 with st.expander("➕ Add a New Product", expanded=st.session_state["add_product_expanded"]):
     input_values = {}
     n_cols = 3
-    header_rows = [headers[i:i+n_cols] for i in range(0, len(headers), n_cols)]
+    visible_headers = [h for h in VISIBLE_FIELDS if h in headers]
+    header_rows = [visible_headers[i:i+n_cols] for i in range(0, len(visible_headers), n_cols)]
     st.markdown("**Enter New Product Details:**")
     for row in header_rows:
         cols = st.columns(len(row), gap="small")
@@ -202,22 +224,40 @@ with st.expander("➕ Add a New Product", expanded=st.session_state["add_product
                     input_values[header] = st.text_input(header, value=st.session_state["barcode"], key=unique_key)
                 elif header == framecode_col:
                     input_values[header] = st.text_input(header, value=st.session_state["framecode"], key=unique_key)
-                elif header.lower() == "quantity":
+                elif header.upper() == "SUPPLIER":
+                    input_values[header] = st.text_input(header, value=st.session_state.get("supplier_for_framecode", ""), key=unique_key)
+                elif header.lower() == "model":
+                    input_values[header] = st.text_input(header, value=smart_suggestion, key=unique_key)
+                elif header.lower() == "size":
+                    default_size = smart_suggestion if smart_suggestion in SIZE_OPTIONS else SIZE_OPTIONS[0]
+                    input_values[header] = st.selectbox(header, SIZE_OPTIONS, index=SIZE_OPTIONS.index(default_size), key=unique_key)
+                elif header.upper() in FREE_TEXT_FIELDS:
+                    input_values[header] = st.text_input(header, value=smart_suggestion, key=unique_key)
+                elif header.upper() == "MANUFACTURER":
+                    input_values[header] = st.text_input(header, value=smart_suggestion, key=unique_key)
+                elif header.upper() == "QUANTITY":
                     try:
                         default_qty = int(smart_suggestion) if smart_suggestion.isdigit() else 1
                     except:
                         default_qty = 1
                     input_values[header] = st.number_input(header, min_value=0, value=default_qty, key=unique_key)
+                elif header.upper() == "F TYPE":
+                    default_ftype = smart_suggestion if smart_suggestion in F_TYPE_OPTIONS else F_TYPE_OPTIONS[0]
+                    input_values[header] = st.selectbox(header, F_TYPE_OPTIONS, index=F_TYPE_OPTIONS.index(default_ftype), key=unique_key)
+                elif header.upper() == "FRSTATUS":
+                    default_status = smart_suggestion if smart_suggestion in FRSTATUS_OPTIONS else FRSTATUS_OPTIONS[1]
+                    input_values[header] = st.selectbox(header, FRSTATUS_OPTIONS, index=FRSTATUS_OPTIONS.index(default_status), key=unique_key)
+                elif header.upper() in ["TEMPLE", "DEPTH", "DIAG", "RRP", "EXCOSTPR", "COST PRICE"]:
+                    input_values[header] = st.text_input(header, value=smart_suggestion, key=unique_key)
+                elif header.upper() == "TAXPC":
+                    default_tax = smart_suggestion if smart_suggestion in TAXPC_OPTIONS else TAXPC_OPTIONS[9]
+                    input_values[header] = st.selectbox(header, TAXPC_OPTIONS, index=TAXPC_OPTIONS.index(default_tax), key=unique_key)
+                elif header.upper() == "AVAIL FROM":
+                    input_values[header] = st.date_input(header, value=smart_suggestion if isinstance(smart_suggestion, datetime) or isinstance(smart_suggestion, pd.Timestamp) else datetime.now().date(), key=unique_key)
+                elif header.upper() == "NOTE":
+                    input_values[header] = st.text_input(header, value=smart_suggestion, key=unique_key)
                 else:
-                    options_from_inventory = sorted([str(opt) for opt in df[header].dropna().unique() if str(opt).strip() != ""])
-                    options = []
-                    if smart_suggestion and smart_suggestion not in options_from_inventory:
-                        options = [smart_suggestion] + options_from_inventory
-                    else:
-                        options = options_from_inventory
-                    options = [""] + options if options else ["", smart_suggestion] if smart_suggestion else ["", "Option 1", "Option 2", "Option 3"]
-                    index_to_select = options.index(smart_suggestion) if smart_suggestion in options else 0
-                    input_values[header] = st.selectbox(header, options, index=index_to_select, key=unique_key)
+                    input_values[header] = st.text_input(header, value=smart_suggestion, key=unique_key)
                 st.markdown('</div>', unsafe_allow_html=True)
 
     with st.form(key="add_product_form"):
@@ -225,9 +265,9 @@ with st.expander("➕ Add a New Product", expanded=st.session_state["add_product
         submit = st.form_submit_button("Add Product")
         if submit:
             required_fields = [barcode_col, framecode_col]
-            missing = [field for field in required_fields if field in headers and not input_values.get(field)]
-            barcode_cleaned = clean_barcode(input_values[barcode_col])
-            framecode_cleaned = clean_barcode(input_values[framecode_col])
+            missing = [field for field in required_fields if field in visible_headers and not input_values.get(field)]
+            barcode_cleaned = clean_barcode(input_values.get(barcode_col, ""))
+            framecode_cleaned = clean_barcode(input_values.get(framecode_col, ""))
             df_barcodes_cleaned = df[barcode_col].map(clean_barcode)
             df_framecodes_cleaned = df[framecode_col].map(clean_barcode)
             if missing:
@@ -237,7 +277,16 @@ with st.expander("➕ Add a New Product", expanded=st.session_state["add_product
             elif framecode_cleaned in df_framecodes_cleaned.values:
                 st.error("This framecode already exists in inventory!")
             else:
-                new_row = {h: input_values.get(h, "") for h in headers}
+                # Fill all columns: visible fields from form, others blank
+                new_row = {}
+                for col in headers:
+                    if col in input_values:
+                        val = input_values[col]
+                        if col == "AVAIL FROM" and isinstance(val, (datetime, pd.Timestamp)):
+                            val = val.strftime('%Y-%m-%d')
+                        new_row[col] = val
+                    else:
+                        new_row[col] = ""
                 if "Timestamp" in df.columns:
                     new_row["Timestamp"] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
@@ -263,7 +312,8 @@ with st.expander("✏️ Edit or 🗑 Delete Products", expanded=st.session_stat
             product = df.loc[selected_row]
             edit_values = {}
             n_cols = 3
-            header_rows = [headers[i:i+n_cols] for i in range(0, len(headers), n_cols)]
+            visible_headers = [h for h in VISIBLE_FIELDS if h in headers]
+            header_rows = [visible_headers[i:i+n_cols] for i in range(0, len(visible_headers), n_cols)]
             st.markdown("**Edit Product Details**")
             for row in header_rows:
                 cols = st.columns(len(row), gap="small")
@@ -276,28 +326,52 @@ with st.expander("✏️ Edit or 🗑 Delete Products", expanded=st.session_stat
                         smart_suggestion = get_smart_default(header, df)
                         if header == barcode_col or header == framecode_col:
                             edit_values[header] = st.text_input(header, value=str(show_value), key=unique_key)
-                        elif header.lower() == "quantity":
+                        elif header.upper() == "SUPPLIER":
+                            edit_values[header] = st.text_input(header, value=str(show_value), key=unique_key)
+                        elif header.lower() == "model":
+                            edit_values[header] = st.text_input(header, value=str(show_value), key=unique_key)
+                        elif header.lower() == "size":
+                            default_size = str(show_value) if str(show_value) in SIZE_OPTIONS else SIZE_OPTIONS[0]
+                            edit_values[header] = st.selectbox(header, SIZE_OPTIONS, index=SIZE_OPTIONS.index(default_size), key=unique_key)
+                        elif header.upper() in FREE_TEXT_FIELDS:
+                            edit_values[header] = st.text_input(header, value=str(show_value), key=unique_key)
+                        elif header.upper() == "MANUFACTURER":
+                            edit_values[header] = st.text_input(header, value=str(show_value), key=unique_key)
+                        elif header.upper() == "QUANTITY":
                             try:
-                                default_qty = int(smart_suggestion) if smart_suggestion.isdigit() else 1
+                                default_qty = int(str(show_value)) if str(show_value).isdigit() else 1
                             except:
                                 default_qty = 1
-                            edit_values[header] = st.number_input(header, min_value=0, value=int(value) if str(value).isdigit() else default_qty, key=unique_key)
+                            edit_values[header] = st.number_input(header, min_value=0, value=default_qty, key=unique_key)
+                        elif header.upper() == "F TYPE":
+                            default_ftype = str(show_value) if str(show_value) in F_TYPE_OPTIONS else F_TYPE_OPTIONS[0]
+                            edit_values[header] = st.selectbox(header, F_TYPE_OPTIONS, index=F_TYPE_OPTIONS.index(default_ftype), key=unique_key)
+                        elif header.upper() == "FRSTATUS":
+                            default_status = str(show_value) if str(show_value) in FRSTATUS_OPTIONS else FRSTATUS_OPTIONS[1]
+                            edit_values[header] = st.selectbox(header, FRSTATUS_OPTIONS, index=FRSTATUS_OPTIONS.index(default_status), key=unique_key)
+                        elif header.upper() in ["TEMPLE", "DEPTH", "DIAG", "RRP", "EXCOSTPR", "COST PRICE"]:
+                            edit_values[header] = st.text_input(header, value=str(show_value), key=unique_key)
+                        elif header.upper() == "TAXPC":
+                            default_tax = str(show_value) if str(show_value) in TAXPC_OPTIONS else TAXPC_OPTIONS[9]
+                            edit_values[header] = st.selectbox(header, TAXPC_OPTIONS, index=TAXPC_OPTIONS.index(default_tax), key=unique_key)
+                        elif header.upper() == "AVAIL FROM":
+                            try:
+                                date_val = pd.to_datetime(show_value).date() if show_value else datetime.now().date()
+                            except:
+                                date_val = datetime.now().date()
+                            edit_values[header] = st.date_input(header, value=date_val, key=unique_key)
+                        elif header.upper() == "NOTE":
+                            edit_values[header] = st.text_input(header, value=str(show_value), key=unique_key)
                         else:
-                            options_from_inventory = sorted([str(opt) for opt in df[header].dropna().unique() if str(opt).strip() != ""])
-                            options = []
-                            if smart_suggestion and smart_suggestion not in options_from_inventory:
-                                options = [smart_suggestion] + options_from_inventory
-                            else:
-                                options = options_from_inventory
-                            options = [""] + options if options else ["", smart_suggestion] if smart_suggestion else ["", "Option 1", "Option 2", "Option 3"]
-                            index_to_select = options.index(str(value)) if str(value) in options else 0
-                            edit_values[header] = st.selectbox(header, options, index=index_to_select, key=unique_key)
+                            edit_values[header] = st.text_input(header, value=str(show_value), key=unique_key)
                         st.markdown('</div>', unsafe_allow_html=True)
             with st.form(key=f"edit_form_{selected_row}"):
                 col1, col2 = st.columns(2)
                 submit_edit = col1.form_submit_button("Save Changes")
                 submit_delete = col2.form_submit_button("Delete Product")
                 if submit_edit:
+                    if "AVAIL FROM" in edit_values and isinstance(edit_values["AVAIL FROM"], (datetime, pd.Timestamp)):
+                        edit_values["AVAIL FROM"] = edit_values["AVAIL FROM"].strftime('%Y-%m-%d')
                     edit_barcode_cleaned = clean_barcode(edit_values[barcode_col])
                     edit_framecode_cleaned = clean_barcode(edit_values[framecode_col])
                     df_barcodes_cleaned = df[barcode_col].map(clean_barcode)
@@ -310,7 +384,13 @@ with st.expander("✏️ Edit or 🗑 Delete Products", expanded=st.session_stat
                         st.error("Another product with this framecode already exists!")
                     else:
                         for h in headers:
-                            df.at[selected_row, h] = edit_values.get(h, "")
+                            if h in edit_values:
+                                val = edit_values[h]
+                                if h == "AVAIL FROM" and isinstance(val, (datetime, pd.Timestamp)):
+                                    val = val.strftime('%Y-%m-%d')
+                                df.at[selected_row, h] = val
+                            else:
+                                df.at[selected_row, h] = ""
                         if "Timestamp" in df.columns:
                             df.at[selected_row, "Timestamp"] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         df.to_excel(INVENTORY_FILE, index=False)
@@ -359,12 +439,9 @@ with st.expander("📦 Stock Count"):
             st.error(f"Error reading file: {e}")
             scanned_df = None
 
-        # Show a preview
         if scanned_df is not None:
             st.write("Preview of your uploaded file:")
             st.dataframe(scanned_df.head(), use_container_width=True)
-            
-            # Try to auto-detect the barcode column
             barcode_candidates = [
                 col for col in scanned_df.columns
                 if "barcode" in col.lower() or "ean" in col.lower() or "upc" in col.lower() or "code" in col.lower()
