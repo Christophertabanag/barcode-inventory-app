@@ -94,7 +94,6 @@ def get_smart_default(header, df):
         return ""
     return ""
 
-# Only these fields should be shown in Add/Edit Product forms
 VISIBLE_FIELDS = [
     "BARCODE", "LOCATION", "FRAME NO.", "PKEY", "MANUFACTURER", "MODEL", "SIZE",
     "F COLOUR", "F GROUP", "SUPPLIER", "QUANTITY", "F TYPE", "TEMPLE", "DEPTH", "DIAG",
@@ -105,7 +104,6 @@ FREE_TEXT_FIELDS = [
     "PKEY", "F COLOUR", "F GROUP", "BASECURVE"
 ]
 
-# Dropdown options for some fields
 F_TYPE_OPTIONS = ["MEN", "WOMEN", "KIDS", "UNISEX"]
 FRSTATUS_OPTIONS = ["CONSIGNMENT OWNED", "PRACTICE OWNED"]
 TAXPC_OPTIONS = [f"GST {i}%" for i in range(1, 21)]
@@ -253,7 +251,15 @@ with st.expander("➕ Add a New Product", expanded=st.session_state["add_product
                     default_tax = smart_suggestion if smart_suggestion in TAXPC_OPTIONS else TAXPC_OPTIONS[9]
                     input_values[header] = st.selectbox(header, TAXPC_OPTIONS, index=TAXPC_OPTIONS.index(default_tax), key=unique_key)
                 elif header.upper() == "AVAIL FROM":
-                    input_values[header] = st.date_input(header, value=smart_suggestion if isinstance(smart_suggestion, datetime) or isinstance(smart_suggestion, pd.Timestamp) else datetime.now().date(), key=unique_key)
+                    # Safe date handling for initial value
+                    try:
+                        if pd.isnull(smart_suggestion) or smart_suggestion == "":
+                            date_val = datetime.now().date()
+                        else:
+                            date_val = pd.to_datetime(smart_suggestion).date()
+                    except Exception:
+                        date_val = datetime.now().date()
+                    input_values[header] = st.date_input(header, value=date_val, key=unique_key)
                 elif header.upper() == "NOTE":
                     input_values[header] = st.text_input(header, value=smart_suggestion, key=unique_key)
                 else:
@@ -277,7 +283,6 @@ with st.expander("➕ Add a New Product", expanded=st.session_state["add_product
             elif framecode_cleaned in df_framecodes_cleaned.values:
                 st.error("This framecode already exists in inventory!")
             else:
-                # Fill all columns: visible fields from form, others blank
                 new_row = {}
                 for col in headers:
                     if col in input_values:
@@ -356,8 +361,11 @@ with st.expander("✏️ Edit or 🗑 Delete Products", expanded=st.session_stat
                             edit_values[header] = st.selectbox(header, TAXPC_OPTIONS, index=TAXPC_OPTIONS.index(default_tax), key=unique_key)
                         elif header.upper() == "AVAIL FROM":
                             try:
-                                date_val = pd.to_datetime(show_value).date() if show_value else datetime.now().date()
-                            except:
+                                if pd.isnull(show_value) or show_value == "":
+                                    date_val = datetime.now().date()
+                                else:
+                                    date_val = pd.to_datetime(show_value).date()
+                            except Exception:
                                 date_val = datetime.now().date()
                             edit_values[header] = st.date_input(header, value=date_val, key=unique_key)
                         elif header.upper() == "NOTE":
